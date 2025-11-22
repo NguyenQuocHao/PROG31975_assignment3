@@ -9,10 +9,10 @@ import CoreLocation
 import MapKit
 import SwiftUI
 
-enum Field: Hashable {
-    case finalDestination
-    case stop1
-    case stop2
+enum Field: String, Hashable {
+    case finalDestination = "Destination"
+    case stop1 = "Stop 1"
+    case stop2 = "Stop 2"
 }
 
 struct ContentView: View {
@@ -24,7 +24,7 @@ struct ContentView: View {
     @State var stop1 = ""
     @State var stop2 = ""
     @State var selection: MKMapItem?
-    @State var route: MKRoute?
+//    @State var route: MKRoute?
     @State var routes: [Path: MKRoute?] = [
         .startToFinish: nil,
         .startToStop1: nil,
@@ -42,19 +42,20 @@ struct ContentView: View {
                 for key in routes.keys {
                     routes[key] = nil
                 }
+                
                 locations = [:]
             }
 
             Text("Select path")
             Picker("", selection: $selectedPath) {
-                ForEach(Path.allCases, id: \.self) { option in
+                ForEach(Path.allCases.prefix(3), id: \.self) { option in
                     Text(option.rawValue).tag(option)
                 }
             }
             .onChange(of: selectedPath) { oldValue, newValue in
                 locationManagerVM.mapItems.removeAll()
                 Task {
-                    await showRouteToLocation(selection, selectedPath)
+                    await showRouteToLocation(selectedPath)
                 }
             }
 
@@ -70,14 +71,15 @@ struct ContentView: View {
             Button("Locate") {
                 findLocation()
             }
+            
+            Button("Find route") {
+                Task {
+                    await showRouteToLocation(selectedPath)
+                }
+            }
 
             ForEach(locationManagerVM.mapItems.prefix(3), id: \.self) { item in
                 Text("\(item.name ?? ""): \(item.placemark.title ?? "")")
-                Button("Find route") {
-                    Task {
-                        await showRouteToLocation(item, selectedPath)
-                    }
-                }
             }
 
             if let mk = routes[.startToFinish] {
@@ -99,16 +101,10 @@ struct ContentView: View {
                     Marker(item: item)
                 }
 
-                ForEach(Array(locations.values), id: \.self) { item in
-                    Marker(item: item)
+                ForEach(Array(locations.keys), id: \.self) { key in
+                    Marker("\(key.rawValue): \(locations[key]?.name ?? "")", coordinate: locations[key]!.placemark.coordinate)
                 }
 
-                if let mk = routes[.startToFinish] {
-                    if let mk1 = mk {
-                        MapPolyline(mk1.polyline)
-                            .stroke(.blue, style: StrokeStyle(lineWidth: 5))
-                    }
-                }
                 if let mk = routes[.startToStop1] {
                     if let mk1 = mk {
                         MapPolyline(mk1.polyline)
@@ -121,6 +117,18 @@ struct ContentView: View {
                             .stroke(.green, style: StrokeStyle(lineWidth: 5))
                     }
                 }
+                if let mk = routes[.stop2ToDestination] {
+                    if let mk1 = mk {
+                        MapPolyline(mk1.polyline)
+                            .stroke(.blue, style: StrokeStyle(lineWidth: 5))
+                    }
+                }
+            }
+            .mapControls {
+                MapCompass()
+                MapPitchToggle()
+                MapScaleView()
+                MapUserLocationButton()
             }
             .task(id: selection) {
                 locationManagerVM.mapItems.removeAll()
@@ -129,7 +137,7 @@ struct ContentView: View {
                     locations[unwrapped] = selection
                 }
 
-                await showRouteToLocation(selection, selectedPath)
+//                await showRouteToLocation(selection, selectedPath)
             }
         }
         .padding()
@@ -160,40 +168,98 @@ struct ContentView: View {
             return
         }
     }
+    
+    func getSourceLocation(_ path: Path) -> CLLocationCoordinate2D? {
+        switch path {
+        case .stop1ToStop2:
+            return locations[.stop1]?.placemark.coordinate
+        case .stop2ToDestination:
+            return locations[.stop2]?.placemark.coordinate
+        case .startToFinish:
+            if locations[.stop2] != nil {
+                return locations[.stop2]?.placemark.coordinate
+            }
+            else if locations[.stop1] != nil {
+                return locations[.stop1]?.placemark.coordinate
+            }
+            else {
+                return locationManagerVM.curLocation
+            }
+        case .startToStop1:
+            return locationManagerVM.curLocation
+        }
+    }
+    
+    func getDestinationLocation(_ path: Path) -> CLLocationCoordinate2D? {
+        switch path {
+        case .stop1ToStop2:
+            return locations[.stop2]?.placemark.coordinate
+        case .stop2ToDestination:
+            return locations[.finalDestination]?.placemark.coordinate
+        case .startToFinish:
+            return locations[.finalDestination]?.placemark.coordinate
+        case .startToStop1:
+            return locations[.stop1]?.placemark.coordinate
+        }
+    }
 
-    func showRouteToLocation(_ targetPlace: MKMapItem?, _ path: Path) async {
-        guard let selection = selection,
-            let curLocation = locationManagerVM.curLocation
+    func showRouteToLocation(_ path: Path) async {
+        guard let curLocation = locationManagerVM.curLocation
         else {
             return
         }
 
         let request = MKDirections.Request()
-        switch selectedPath {
+        
+        switch path {
         case .startToFinish:
-            request.source = MKMapItem(
-                placemark: .init(coordinate: curLocation)
-            )
+            if locations[.stop1] != nil {
+                await showRouteToLocation(.startToStop1)
+            }
+            
+            if locations[.stop2] != nil {
+                await showRouteToLocation(.stop1ToStop2)
+            }
+            
+            if locations[.finalDestination] != nil {
+                await showRouteToLocation(.stop2ToDestination)
+            }
         case .startToStop1:
-            request.source = MKMapItem(
-                placemark: .init(coordinate: curLocation)
-            )
+            fallthrough
         case .stop1ToStop2:
-            request.source = MKMapItem(
+            fallthrough
+        case .stop2ToDestination:
+            let source = getSourceLocation(path)
+            if let unwrappedSource = source {
+                request.source = MKMapItem(
+                    placemark: .init(
+                        coordinate: unwrappedSource
+                    )
+                )
+            }
+            else {
+                return
+            }
+        }
+        
+        let destination = getDestinationLocation(path)
+        if let unwrappedDestination = destination {
+            request.destination = MKMapItem(
                 placemark: .init(
-                    coordinate: locations[.stop1]!.placemark.coordinate
+                    coordinate: unwrappedDestination
                 )
             )
         }
-        request.destination = selection
+        else {
+            return
+        }
 
         do {
             let response = try await MKDirections(request: request).calculate()
-
-            self.route = response.routes.first
+            
             self.routes[path] = response.routes.first
 
-            if let rect = route?.polyline.boundingMapRect {
+            if let rect = routes[path]??.polyline.boundingMapRect {
                 camPosition = .rect(rect)
             }
         } catch {
