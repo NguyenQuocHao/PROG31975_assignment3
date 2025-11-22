@@ -30,12 +30,21 @@ struct ContentView: View {
         .startToStop1: nil,
         .stop1ToStop2: nil,
     ]
+    @State var locations: [Field: MKMapItem] = [:]
 
     @State private var selectedPath: Path = .startToFinish
     @FocusState private var focusedField: Field?
 
     var body: some View {
         VStack {
+            Button("Reset") {
+                locationManagerVM.mapItems.removeAll()
+                for key in routes.keys {
+                    routes[key] = nil
+                }
+                locations = [:]
+            }
+
             Text("Select path")
             Picker("", selection: $selectedPath) {
                 ForEach(Path.allCases, id: \.self) { option in
@@ -44,6 +53,9 @@ struct ContentView: View {
             }
             .onChange(of: selectedPath) { oldValue, newValue in
                 locationManagerVM.mapItems.removeAll()
+                Task {
+                    await showRouteToLocation(selection, selectedPath)
+                }
             }
 
             TextField("Final Destination", text: $finalDestination)
@@ -61,11 +73,11 @@ struct ContentView: View {
 
             ForEach(locationManagerVM.mapItems.prefix(3), id: \.self) { item in
                 Text("\(item.name ?? ""): \(item.placemark.title ?? "")")
-                //                Button("Find route") {
-                //                    Task {
-                //                        await showRouteToLocation(item, selectedPath)
-                //                    }
-                //                }
+                Button("Find route") {
+                    Task {
+                        await showRouteToLocation(item, selectedPath)
+                    }
+                }
             }
 
             if let mk = routes[.startToFinish] {
@@ -79,7 +91,15 @@ struct ContentView: View {
             }
 
             Map(position: $camPosition, selection: $selection) {
+                if let curLocation = locationManagerVM.curLocation {
+                    Marker("You're here", coordinate: curLocation)
+                }
+
                 ForEach(locationManagerVM.mapItems, id: \.self) { item in
+                    Marker(item: item)
+                }
+
+                ForEach(Array(locations.values), id: \.self) { item in
                     Marker(item: item)
                 }
 
@@ -105,10 +125,27 @@ struct ContentView: View {
             .task(id: selection) {
                 locationManagerVM.mapItems.removeAll()
 
+                if let unwrapped = focusedField {
+                    locations[unwrapped] = selection
+                }
+
                 await showRouteToLocation(selection, selectedPath)
             }
         }
         .padding()
+    }
+
+    func saveLocation() {
+        switch focusedField {
+        case .finalDestination:
+            locations[.finalDestination] = selection
+        case .stop1:
+            locationManagerVM.searchLoaction(name: stop1)
+        case .stop2:
+            locationManagerVM.searchLoaction(name: stop2)
+        default:
+            return
+        }
     }
 
     func findLocation() {
@@ -132,7 +169,22 @@ struct ContentView: View {
         }
 
         let request = MKDirections.Request()
-        request.source = MKMapItem(placemark: .init(coordinate: curLocation))
+        switch selectedPath {
+        case .startToFinish:
+            request.source = MKMapItem(
+                placemark: .init(coordinate: curLocation)
+            )
+        case .startToStop1:
+            request.source = MKMapItem(
+                placemark: .init(coordinate: curLocation)
+            )
+        case .stop1ToStop2:
+            request.source = MKMapItem(
+                placemark: .init(
+                    coordinate: locations[.stop1]!.placemark.coordinate
+                )
+            )
+        }
         request.destination = selection
 
         do {
