@@ -144,11 +144,8 @@ struct ContentView: View {
             }
             .task(id: selection) {
                 if let unwrappedSelection = selection  {
-                    let index2 = locationManagerVM.locations.values.firstIndex(where: { $0.name == unwrappedSelection.name })
-                    print(index2)
-
-                    if let index = locationManagerVM.locations.values.firstIndex(where: { $0.identifier == unwrappedSelection.identifier })  {
-                        print(index)
+                    if let index = locationManagerVM.locations.values.firstIndex(where: { $0.placemark.coordinate.latitude == unwrappedSelection.placemark.coordinate.latitude &&  $0.placemark.coordinate.longitude == unwrappedSelection.placemark.coordinate.longitude})  {
+                        print("delete \(index)")
                         locationManagerVM.locations.remove(at:index)
                     }
                     else {
