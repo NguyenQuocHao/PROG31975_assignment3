@@ -1,9 +1,4 @@
-//
-//  Assignment3HaoApp.swift
-//  Assignment3Hao
-//
-//  Created by user275773 on 11/21/25.
-//
+// Code by Hao Nguyen, 991521091
 
 import SwiftUI
 

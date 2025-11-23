@@ -1,9 +1,4 @@
-//
-//  File.swift
-//  LocationServiceDemo
-//
-//  Created by Default User on 11/5/25.
-//
+// Code by Hao Nguyen, 991521091
 
 import CoreLocation
 import Foundation
