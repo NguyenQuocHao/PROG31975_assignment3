@@ -162,8 +162,24 @@ struct ContentView: View {
                 }
             }
         }
+        .alert("Location Permission Required",
+               isPresented: $locationManagerVM.showDenyAlert) {
+            Button("Open Settings") {
+                openAppSettings()
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("Please enable location access in Settings. Open Settings -> Apps (or click Open Settings here) -> Assignment3Hao -> Location. Unselect 'Never' by choosing 'While Using The App' or 'Ask Next Time Or When I Share'")
+        }
         .padding()
     }
+    
+    private func openAppSettings() {
+        if let url = URL(string: UIApplication.openSettingsURLString) {
+            UIApplication.shared.open(url)
+        }
+    }
+
 }
 
 #Preview {

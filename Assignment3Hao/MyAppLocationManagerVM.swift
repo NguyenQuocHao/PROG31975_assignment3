@@ -5,15 +5,23 @@
 //  Created by Default User on 11/5/25.
 //
 
-import Foundation
 import CoreLocation
+import Foundation
 import MapKit
 import SwiftUI
 
-class MyAppLocationManagerVM : NSObject , CLLocationManagerDelegate , ObservableObject {
-    public let torontoCoordinate = CLLocationCoordinate2D(latitude: 43.6532, longitude: -79.3832)
+class MyAppLocationManagerVM: NSObject, CLLocationManagerDelegate,
+    ObservableObject
+{
+    public let torontoCoordinate = CLLocationCoordinate2D(
+        latitude: 43.6532,
+        longitude: -79.3832
+    )
 
     let locationMange = CLLocationManager()
+
+    @Published var showDenyAlert = false
+    @Published var authorizationStatus: CLAuthorizationStatus = .notDetermined
     @Published var routes: [Path: MKRoute?] = [
         .startToFinish: nil,
         .startToStop1: nil,
@@ -21,16 +29,16 @@ class MyAppLocationManagerVM : NSObject , CLLocationManagerDelegate , Observable
         .stop2ToDestination: nil,
     ]
     @Published var locations: [Field: MKMapItem] = [:]
-    
-    @Published var curLocation : CLLocationCoordinate2D?
-    
-    @Published var mapItems :[MKMapItem] = []
-    
+    @Published var curLocation: CLLocationCoordinate2D?
+    @Published var mapItems: [MKMapItem] = []
     @Published var camPosition: MapCameraPosition
 
     override init() {
-        let torontoCoordinate = CLLocationCoordinate2D(latitude: 43.6532, longitude: -79.3832)
-        
+        let torontoCoordinate = CLLocationCoordinate2D(
+            latitude: 43.6532,
+            longitude: -79.3832
+        )
+
         let region = MKCoordinateRegion(
             center: torontoCoordinate,
             span: MKCoordinateSpan(latitudeDelta: 0.1, longitudeDelta: 0.1)
@@ -39,47 +47,76 @@ class MyAppLocationManagerVM : NSObject , CLLocationManagerDelegate , Observable
         self.camPosition = .userLocation(
             fallback: .region(region)
         )
-        
+
         super.init()
 
         curLocation = torontoCoordinate
         locationMange.delegate = self
         locationMange.requestWhenInUseAuthorization()
         locationMange.startUpdatingLocation()
-        
     }
-    
-    func locationManager( _ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]){
+
+    func locationManager(
+        _ manager: CLLocationManager,
+        didUpdateLocations locations: [CLLocation]
+    ) {
         if let location = locations.last {
-            print("Location: \(location.coordinate.latitude), \(location.coordinate.longitude) ")
-            
+            print(
+                "Location: \(location.coordinate.latitude), \(location.coordinate.longitude) "
+            )
+
             curLocation = location.coordinate
         }
     }
-    
-    func searchLoaction(name :String?){
-        guard let name = name , let curLocation = curLocation else {
+
+    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        authorizationStatus = manager.authorizationStatus
+
+        switch authorizationStatus {
+        case .notDetermined:
+            print("Authorization not determined")
+        case .restricted:
+            print("Authorization restricted")
+            fallthrough
+        case .denied:
+            print("Authorization denied")
+            showDenyAlert = true
+        case .authorizedWhenInUse, .authorizedAlways:
+            print("Authorized — starting location updates")
+            manager.startUpdatingLocation()
+        @unknown default:
+            break
+        }
+    }
+
+    func searchLoaction(name: String?) {
+        guard let name = name, let curLocation = curLocation else {
             print("invalid name")
             return
         }
-        
+
         let request = MKLocalSearch.Request()
         request.naturalLanguageQuery = name
         request.region.center = curLocation
-        
+
         let search = MKLocalSearch(request: request)
-        
-        search.start{  response , error in
-            guard let res = response else{
+
+        search.start { response, error in
+            guard let res = response else {
                 print("Location not found")
                 return
             }
-            
+
             self.mapItems = res.mapItems
         }
     }
 
-    func findLocation(focusedField: Field?, finalDestination: String, stop1: String, stop2: String) {
+    func findLocation(
+        focusedField: Field?,
+        finalDestination: String,
+        stop1: String,
+        stop2: String
+    ) {
         switch focusedField {
         case .finalDestination:
             searchLoaction(name: finalDestination)
@@ -91,7 +128,7 @@ class MyAppLocationManagerVM : NSObject , CLLocationManagerDelegate , Observable
             return
         }
     }
-    
+
     func getDestinationLocation(_ path: Path) -> CLLocationCoordinate2D? {
         switch path {
         case .stop1ToStop2:
@@ -104,7 +141,7 @@ class MyAppLocationManagerVM : NSObject , CLLocationManagerDelegate , Observable
             return locations[.stop1]?.placemark.coordinate
         }
     }
-    
+
     func getSourceLocation(_ path: Path) -> CLLocationCoordinate2D? {
         switch path {
         case .stop1ToStop2:
@@ -112,21 +149,17 @@ class MyAppLocationManagerVM : NSObject , CLLocationManagerDelegate , Observable
         case .stop2ToDestination:
             if locations[.stop2] != nil {
                 return locations[.stop2]?.placemark.coordinate
-            }
-            else if locations[.stop1] != nil {
+            } else if locations[.stop1] != nil {
                 return locations[.stop1]?.placemark.coordinate
-            }
-            else {
+            } else {
                 return curLocation
             }
         case .startToFinish:
             if locations[.stop2] != nil {
                 return locations[.stop2]?.placemark.coordinate
-            }
-            else if locations[.stop1] != nil {
+            } else if locations[.stop1] != nil {
                 return locations[.stop1]?.placemark.coordinate
-            }
-            else {
+            } else {
                 return curLocation
             }
         case .startToStop1:
@@ -141,25 +174,21 @@ class MyAppLocationManagerVM : NSObject , CLLocationManagerDelegate , Observable
         }
 
         let request = MKDirections.Request()
-        
+
         switch path {
         case .startToFinish:
             if locations[.stop1] != nil {
                 await showRouteToLocation(.startToStop1)
             }
-            
+
             if locations[.stop2] != nil {
                 await showRouteToLocation(.stop1ToStop2)
             }
-            
+
             if locations[.finalDestination] != nil {
                 await showRouteToLocation(.stop2ToDestination)
             }
-        case .startToStop1:
-            fallthrough
-        case .stop1ToStop2:
-            fallthrough
-        case .stop2ToDestination:
+        case .startToStop1, .stop1ToStop2, .stop2ToDestination:
             let source = getSourceLocation(path)
             if let unwrappedSource = source {
                 request.source = MKMapItem(
@@ -167,12 +196,11 @@ class MyAppLocationManagerVM : NSObject , CLLocationManagerDelegate , Observable
                         coordinate: unwrappedSource
                     )
                 )
-            }
-            else {
+            } else {
                 return
             }
         }
-        
+
         let destination = getDestinationLocation(path)
         if let unwrappedDestination = destination {
             request.destination = MKMapItem(
@@ -180,14 +208,13 @@ class MyAppLocationManagerVM : NSObject , CLLocationManagerDelegate , Observable
                     coordinate: unwrappedDestination
                 )
             )
-        }
-        else {
+        } else {
             return
         }
 
         do {
             let response = try await MKDirections(request: request).calculate()
-            
+
             self.routes[path] = response.routes.first
 
             if let rect = routes[path]??.polyline.boundingMapRect {
