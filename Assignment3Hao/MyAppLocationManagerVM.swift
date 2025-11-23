@@ -14,7 +14,6 @@ class MyAppLocationManagerVM : NSObject , CLLocationManagerDelegate , Observable
     public let torontoCoordinate = CLLocationCoordinate2D(latitude: 43.6532, longitude: -79.3832)
 
     let locationMange = CLLocationManager()
-//    @Published var selection: MKMapItem?
     @Published var routes: [Path: MKRoute?] = [
         .startToFinish: nil,
         .startToStop1: nil,
