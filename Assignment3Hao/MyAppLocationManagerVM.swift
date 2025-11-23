@@ -19,11 +19,15 @@ class MyAppLocationManagerVM: NSObject, CLLocationManagerDelegate,
     )
 
     let locationMange = CLLocationManager()
-
+    
+    @Published var isLoadingLocation = false
     @Published var showDenyAlert = false
+    @Published var noLocationsFound = false
+    @Published var isSearching = false
+
     @Published var authorizationStatus: CLAuthorizationStatus = .notDetermined
     @Published var routes: [Path: MKRoute?] = [
-        .startToFinish: nil,
+//        .startToFinish: nil,
         .startToStop1: nil,
         .stop1ToStop2: nil,
         .stop2ToDestination: nil,
@@ -102,12 +106,29 @@ class MyAppLocationManagerVM: NSObject, CLLocationManagerDelegate,
         let search = MKLocalSearch(request: request)
 
         search.start { response, error in
-            guard let res = response else {
-                print("Location not found")
-                return
+            DispatchQueue.main.async {
+                self.isSearching = false
+                
+                if let error = error {
+                    print("Search failed: \(error.localizedDescription)")
+                    self.noLocationsFound = true
+                    return
+                }
+                
+                guard let res = response else {
+                    self.noLocationsFound = true
+                    print("Location not found")
+                    return
+                }
+                
+                if res.mapItems.isEmpty {
+                    self.noLocationsFound = true
+                    print("Location not found")
+                } else {
+                    self.noLocationsFound = false
+                    self.mapItems = res.mapItems
+                }
             }
-
-            self.mapItems = res.mapItems
         }
     }
 
@@ -213,9 +234,29 @@ class MyAppLocationManagerVM: NSObject, CLLocationManagerDelegate,
         }
 
         do {
-            let response = try await MKDirections(request: request).calculate()
+            self.isSearching = true
 
-            self.routes[path] = response.routes.first
+            let directions = MKDirections(request: request)
+            let response = try await directions.calculate()
+            
+            directions.calculate { response, error in
+                DispatchQueue.main.async {
+                    self.isSearching = false
+                    
+                    if let error = error {
+                        print("Directions error: \(error.localizedDescription)")
+                        return
+                    }
+                    
+                    guard let route = response?.routes.first else {
+                        return
+                    }
+                    
+                    self.routes[path] = route
+                }
+            }
+
+//            self.routes[path] = response.routes.first
 
             if let rect = routes[path]??.polyline.boundingMapRect {
                 camPosition = .rect(rect)

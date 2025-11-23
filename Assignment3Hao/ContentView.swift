@@ -104,6 +104,10 @@ struct ContentView: View {
                 .frame(maxHeight: 100)
             }
 
+            if locationManagerVM.isSearching {
+                ProgressView("Searching…")
+                    .padding()
+            }
 
             Map(position: $locationManagerVM.camPosition, selection: $selection) {
                 if let curLocation = locationManagerVM.curLocation {
@@ -170,6 +174,10 @@ struct ContentView: View {
             Button("Cancel", role: .cancel) { }
         } message: {
             Text("Please enable location access in Settings. Open Settings -> Apps (or click Open Settings here) -> Assignment3Hao -> Location. Unselect 'Never' by choosing 'While Using The App' or 'Ask Next Time Or When I Share'")
+        }
+        .alert("Location not found",
+               isPresented: $locationManagerVM.noLocationsFound) {
+            Button("OK", role: .cancel) { }
         }
         .padding()
     }
