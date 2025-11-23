@@ -17,33 +17,34 @@ enum Field: String, Hashable {
 
 struct ContentView: View {
     @ObservedObject var locationManagerVM = MyAppLocationManagerVM()
-    @State var camPosition: MapCameraPosition = .userLocation(
-        fallback: .automatic
-    )
+
     @State var finalDestination = ""
     @State var stop1 = ""
     @State var stop2 = ""
     @State var selection: MKMapItem?
-//    @State var route: MKRoute?
     @State var routes: [Path: MKRoute?] = [
         .startToFinish: nil,
         .startToStop1: nil,
         .stop1ToStop2: nil,
+        .stop2ToDestination: nil,
     ]
     @State var locations: [Field: MKMapItem] = [:]
 
     @State private var selectedPath: Path = .startToFinish
     @FocusState private var focusedField: Field?
-
+    
     var body: some View {
         VStack {
-            Button("Reset") {
-                locationManagerVM.mapItems.removeAll()
-                for key in routes.keys {
-                    routes[key] = nil
+            HStack {
+                Spacer()
+                Button("Reset") {
+                    locationManagerVM.mapItems.removeAll()
+                    for key in routes.keys {
+                        routes[key] = nil
+                    }
+                    
+                    locations = [:]
                 }
-                
-                locations = [:]
             }
 
             Text("Select path")
@@ -81,18 +82,31 @@ struct ContentView: View {
             ForEach(locationManagerVM.mapItems.prefix(3), id: \.self) { item in
                 Text("\(item.name ?? ""): \(item.placemark.title ?? "")")
             }
+            
+            if selectedPath == .startToFinish {
+                Text("Steps:")
 
-            if let mk = routes[.startToFinish] {
+                ForEach(Array(routes.values), id: \.self) { item in
+                    if let mk = item {
+                        Text("To \(mk.name):")
+
+                        ForEach(mk.steps, id: \.self) { item in
+                            Text(item.instructions)
+                        }
+                    }
+                }
+            }
+            else if let mk = routes[selectedPath] {
                 if let mk1 = mk {
                     Text("Steps:")
-
+                    
                     ForEach(mk1.steps, id: \.self) { item in
                         Text(item.instructions)
                     }
                 }
             }
 
-            Map(position: $camPosition, selection: $selection) {
+            Map(position: $locationManagerVM.camPosition, selection: $selection) {
                 if let curLocation = locationManagerVM.curLocation {
                     Marker("You're here", coordinate: curLocation)
                 }
@@ -131,13 +145,22 @@ struct ContentView: View {
                 MapUserLocationButton()
             }
             .task(id: selection) {
-                locationManagerVM.mapItems.removeAll()
+                if let unwrappedSelection = selection  {
+                    let index2 = locations.values.firstIndex(where: { $0.name == unwrappedSelection.name })
+                    print(index2)
 
-                if let unwrapped = focusedField {
-                    locations[unwrapped] = selection
+                    if let index = locations.values.firstIndex(where: { $0.identifier == unwrappedSelection.identifier })  {
+                        print(index)
+                        locations.remove(at:index)
+                    }
+                    else {
+                        locationManagerVM.mapItems.removeAll()
+
+                        if let unwrapped = focusedField {
+                            locations[unwrapped] = unwrappedSelection
+                        }
+                    }
                 }
-
-//                await showRouteToLocation(selection, selectedPath)
             }
         }
         .padding()
@@ -174,7 +197,15 @@ struct ContentView: View {
         case .stop1ToStop2:
             return locations[.stop1]?.placemark.coordinate
         case .stop2ToDestination:
-            return locations[.stop2]?.placemark.coordinate
+            if locations[.stop2] != nil {
+                return locations[.stop2]?.placemark.coordinate
+            }
+            else if locations[.stop1] != nil {
+                return locations[.stop1]?.placemark.coordinate
+            }
+            else {
+                return locationManagerVM.curLocation
+            }
         case .startToFinish:
             if locations[.stop2] != nil {
                 return locations[.stop2]?.placemark.coordinate
@@ -260,7 +291,7 @@ struct ContentView: View {
             self.routes[path] = response.routes.first
 
             if let rect = routes[path]??.polyline.boundingMapRect {
-                camPosition = .rect(rect)
+                locationManagerVM.camPosition = .rect(rect)
             }
         } catch {
             print("error \(error)")
